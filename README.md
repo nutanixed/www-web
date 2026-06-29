@@ -196,6 +196,7 @@ If you need real authentication, remove the bypass logic and re-enable route dec
 - **LDAP login issues**: verify bind DN/password, search base, and username attribute values.
 - **Release extraction fails**: ensure selected files are valid `.tar.gz` and `tar` is installed.
 - **Permission errors**: ensure the process user has read/write permissions under `UPLOAD_FOLDER`.
+- **`safe_release_push.sh` aborts with "Nothing safe to commit"**: this happens when only blocked files (for example `.env` or `__pycache__/`) are changed. Commit at least one non-sensitive tracked file (like `README.md` or `app.py`) before running the release push script.
 
 ## Recommended Next Improvements
 
