@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LCM Management</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-900">
+    <!-- Navbar -->
+    <nav class="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center gap-3">
+                    <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="h-8 w-auto">
+                    <span class="text-xl font-bold tracking-tight text-slate-900">LCM <span class="text-blue-600 font-extrabold">MANAGER</span></span>
+                </div>
+                <div class="flex items-center gap-4">
+                    <a href="/logout" class="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-red-600 transition-colors bg-slate-100 hover:bg-red-50 px-4 py-2 rounded-lg border border-transparent hover:border-red-100">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Toast Notification Area -->
+        <div id="toast-container" class="fixed top-20 right-4 z-50 pointer-events-none flex flex-col gap-3 max-w-sm w-full">
+            {% with messages = get_flashed_messages() %}
+              {% if messages %}
+                {% for message in messages %}
+                  <div class="pointer-events-auto flex items-center p-4 rounded-xl shadow-2xl text-white bg-blue-600 transform transition-all duration-300">
+                    <i class="fas fa-info-circle mr-3 text-lg"></i>
+                    <div class="flex-1 text-sm font-semibold">{{ message }}</div>
+                    <button onclick="this.parentElement.remove()" class="ml-4 text-white/70 hover:text-white"><i class="fas fa-times"></i></button>
+                  </div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <!-- Left Column: Folders & Upload -->
+            <div class="lg:col-span-4 space-y-8">
+                <!-- Folder Selector -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                <i class="fas fa-folder-open text-amber-500"></i> Target Folder
+                            </h3>
+                            <p class="text-xs text-slate-500 mt-1">Select destination for your uploads.</p>
+                        </div>
+                        <button onclick="toggleFolderModal()" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="New Folder">
+                            <i class="fas fa-folder-plus text-lg"></i>
+                        </button>
+                    </div>
+                    <div class="p-3 space-y-1" id="sidebar-folders">
+                        {% for d in dirs %}
+                        <div class="folder-row flex items-center group {{ 'hidden' if d.level > 1 }}" data-path="{{ d.path }}" data-level="{{ d.level }}" style="margin-left: {{ d.level * 1.2 }}rem;">
+                            <button onclick="toggleSidebarFolder(event, '{{ d.path }}')" class="w-6 h-6 flex items-center justify-center hover:bg-slate-200 rounded-lg transition-all mr-1 toggle-icon-btn" data-path="{{ d.path }}">
+                                <i class="fas fa-caret-down text-slate-400 transition-transform duration-200" style="transform: {{ 'rotate(0deg)' if d.level == 0 else 'rotate(-90deg)' }};"></i>
+                            </button>
+                            <a href="/?dir={{ d.path }}" 
+                               {% if d.path == 'staging' %}title="Upload .tar.gz bundles here to extract them to /release. Source bundles are automatically deleted upon successful extraction."{% endif %}
+                               {% if d.path == 'release' %}title="Reserved for LCM dark site bundles."{% endif %}
+                               class="flex-1 flex items-center justify-between p-2 rounded-xl transition-all hover:bg-slate-50 {{ 'bg-blue-50 text-blue-700 border border-blue-100' if d.path == selected_dir else 'text-slate-600' }}">
+                                <div class="flex items-center">
+                                    <i class="fas {{ 'fa-house' if d.path == '.' else 'fa-folder' }} mr-2.5 opacity-70 {{ 'text-blue-600' if d.path == selected_dir else 'text-amber-500' if d.path != '.' }}"></i>
+                                    <span class="truncate font-medium text-sm">{{ d.name }}</span>
+                                </div>
+                                {% if d.path == selected_dir %}
+                                <div class="w-1.5 h-1.5 rounded-full bg-blue-600 mr-1"></div>
+                                {% endif %}
+                            </a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Upload Form -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="p-6 border-b border-slate-100 bg-slate-50/50">
+                        <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fas fa-cloud-arrow-up text-blue-600"></i> Upload Files
+                        </h3>
+                        <div class="flex items-center gap-2 mt-2">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Destination</span>
+                            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg border border-blue-100/50">
+                                <i class="fas {{ 'fa-house text-[10px]' if selected_dir == '.' else 'fa-folder text-[10px]' }} opacity-60"></i>
+                                <span class="text-xs font-bold tracking-tight">{{ selected_dir if selected_dir != '.' else 'Root' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="p-6">
+                        <form id="upload-form" class="space-y-4">
+                            <input type="hidden" name="dir" value="{{ selected_dir }}">
+                            {% if selected_dir == '.' %}
+                            <div class="border-2 border-dashed border-slate-100 rounded-2xl p-12 flex flex-col items-center justify-center text-center bg-slate-50/50 min-h-[180px]">
+                                <div class="w-16 h-16 bg-slate-100/50 rounded-2xl flex items-center justify-center mb-4">
+                                    <i class="fas fa-ban text-2xl text-slate-300"></i>
+                                </div>
+                                <p class="text-sm font-bold text-slate-400 uppercase tracking-widest">Uploads Restricted</p>
+                                <p class="text-[10px] font-medium text-slate-400 mt-1 uppercase tracking-tight">Select a subfolder to enable uploads</p>
+                            </div>
+                            {% else %}
+                            <div id="drop-zone" class="relative overflow-hidden border-2 border-dashed border-slate-200 rounded-2xl p-12 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 hover:border-blue-500 hover:bg-blue-50/20 group min-h-[180px] bg-slate-50/30">
+                                <div class="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                                <div class="relative transform group-hover:scale-110 group-hover:-translate-y-1 transition-all duration-300 ease-out">
+                                    <div class="w-16 h-16 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center mb-4 group-hover:shadow-indigo-100/50 group-hover:border-blue-200 transition-all">
+                                        <i class="fas fa-cloud-arrow-up text-3xl text-slate-300 group-hover:text-blue-600 transition-colors"></i>
+                                    </div>
+                                </div>
+                                <div class="relative">
+                                    <p class="text-sm font-bold text-slate-700 group-hover:text-slate-900 transition-colors">Click to upload or drag and drop</p>
+                                    <p class="text-[10px] font-medium text-slate-400 mt-1 group-hover:text-slate-500 transition-colors uppercase tracking-widest">Supports multiple files</p>
+                                </div>
+                                <input type="file" name="file" id="file-input" class="hidden" multiple onchange="updateFileName(this)">
+                            </div>
+                            {% endif %}
+                            <div id="file-display" class="hidden p-3 bg-slate-50 rounded-lg border border-slate-100 items-center justify-between">
+                                <span id="file-name" class="text-xs font-bold text-slate-700 truncate mr-2"></span>
+                                <i class="fas fa-check-circle text-green-500"></i>
+                            </div>
+                            <button type="button" id="upload-btn" onclick="handleUpload()" disabled
+                                class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-100 transition-all flex items-center justify-center gap-2 active:scale-[0.98]">
+                                <i class="fas fa-upload"></i> Upload to Folder
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: File List -->
+            <div class="lg:col-span-8">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                        <div>
+                            <div class="flex items-center gap-2 text-xs font-bold text-blue-600 uppercase tracking-widest mb-1">
+                                <a href="/?dir=." class="hover:underline">Root</a>
+                                {% for crumb in breadcrumbs %}
+                                    <i class="fas fa-chevron-right text-[10px] text-slate-300"></i>
+                                    <a href="/?dir={{ crumb.path }}" class="hover:underline">{{ crumb.name }}</a>
+                                {% endfor %}
+                            </div>
+                            <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                <i class="fas fa-table-list text-blue-600"></i> Files in {{ breadcrumbs[-1].name if breadcrumbs else 'Root' }}
+                            </h3>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div id="bulk-actions" class="hidden flex items-center gap-2 mr-4 bg-blue-50 px-4 py-2 rounded-xl border border-blue-100">
+                                <span class="text-xs font-bold text-blue-600 uppercase tracking-wider mr-2"><span id="selected-count">0</span> Selected</span>
+                                <button onclick="downloadSelectedZip()" class="text-sm font-bold text-blue-700 hover:text-blue-800 flex items-center gap-2">
+                                    <i class="fas fa-file-zipper"></i> Download ZIP
+                                </button>
+                                {% if selected_dir == 'staging' %}
+                                <div id="bulk-extract-divider" class="hidden w-px h-4 bg-blue-200 mx-1"></div>
+                                <button id="bulk-extract-btn" onclick="openBulkExtractModal()" class="hidden text-sm font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-2">
+                                    <i class="fas fa-rocket"></i> Extract Bundles
+                                </button>
+                                {% endif %}
+                                <div class="w-px h-4 bg-blue-200 mx-1"></div>
+                                <button onclick="openBulkDeleteModal()" class="text-sm font-bold text-red-600 hover:text-red-700 flex items-center gap-2">
+                                    <i class="fas fa-trash-alt"></i> Delete
+                                </button>
+                            </div>
+                            <button onclick="window.location.reload()" class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50/50 border-b border-slate-100">
+                                    <th class="px-4 py-4 w-10">
+                                        <div class="flex items-center justify-center">
+                                            <div class="relative flex items-center justify-center">
+                                                <input type="checkbox" id="select-all" class="peer absolute opacity-0 w-5 h-5 cursor-pointer z-10" onchange="toggleSelectAll(this)">
+                                                <div class="w-5 h-5 border-2 border-slate-300 rounded-full peer-checked:bg-blue-600 peer-checked:border-blue-600 transition-all flex items-center justify-center">
+                                                    <i class="fas fa-check text-[10px] text-white opacity-0 peer-checked:opacity-100 transition-opacity"></i>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </th>
+                                    <th class="px-2 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">Filename</th>
+                                    <th class="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                {% if not files %}
+                                <tr>
+                                    <td colspan="3" class="px-6 py-12 text-center text-slate-400">
+                                        <i class="fas fa-folder-open text-3xl mb-3 block opacity-20"></i>
+                                        <p class="text-sm font-medium">No files found in this directory</p>
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                {% for file in files %}
+                                <tr class="hover:bg-slate-50/50 transition-colors group">
+                                    <td class="px-4 py-4">
+                                        <div class="flex items-center justify-center">
+                                            {% if not file.is_parent %}
+                                            <div class="relative flex items-center justify-center">
+                                                <input type="checkbox" class="file-checkbox peer absolute opacity-0 w-5 h-5 cursor-pointer z-10" data-filename="{{ file.name }}" onchange="updateSelectedCount()">
+                                                <div class="w-5 h-5 border-2 border-slate-300 rounded-full peer-checked:bg-blue-600 peer-checked:border-blue-600 transition-all flex items-center justify-center">
+                                                    <i class="fas fa-check text-[10px] text-white opacity-0 peer-checked:opacity-100 transition-opacity"></i>
+                                                </div>
+                                            </div>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td class="px-2 py-4 text-sm font-medium text-slate-900">
+                                        <div class="flex items-center gap-3">
+                                            {% if file.is_dir %}
+                                                <i class="fas {{ 'fa-arrow-turn-up rotate-90 scale-x-[-1]' if file.is_parent else 'fa-folder' }} {{ 'text-slate-400' if file.is_parent else 'text-amber-500' }} transition-colors"></i>
+                                                <a href="/?dir={{ file.path }}" 
+                                                   {% if file.path == 'staging' %}title="Upload .tar.gz bundles here to extract them to /release. Source bundles are automatically deleted upon successful extraction."{% endif %}
+                                                   {% if file.path == 'release' %}title="Reserved for LCM dark site bundles."{% endif %}
+                                                   class="hover:text-blue-600">
+                                                    {{ file.name }}
+                                                </a>
+                                            {% else %}
+                                                <i class="far fa-file-alt text-slate-300 group-hover:text-blue-500 transition-colors"></i>
+                                                {{ file.name }}
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4 text-right">
+                                        {% if not file.is_parent %}
+                                        <div class="flex items-center justify-end gap-1">
+                                            {% if selected_dir == 'staging' and file.name.endswith('.tar.gz') %}
+                                            <button onclick="openReleaseModal('{{ file.path }}')" class="text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded-md transition-all" title="Extract Bundles">
+                                                <i class="fas fa-rocket"></i>
+                                            </button>
+                                            {% endif %}
+                                            {% if not file.is_dir %}
+                                            <a href="/download/{{ file.name }}?dir={{ selected_dir }}" class="text-slate-400 hover:text-green-600 p-2 hover:bg-green-50 rounded-md transition-all" title="Download">
+                                                <i class="fas fa-download"></i>
+                                            </a>
+                                            {% endif %}
+                                            <button onclick="openRenameModal('{{ file.name }}')" class="text-slate-400 hover:text-blue-600 p-2 hover:bg-blue-50 rounded-md transition-all" title="Rename">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button onclick="openDeleteModal('{{ file.name }}', {{ 'true' if file.is_dir else 'false' }})" class="text-slate-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-md transition-all" title="Delete">
+                                                <i class="fas fa-trash-alt"></i>
+                                            </button>
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- New Folder Modal -->
+    <div id="folder-modal" class="hidden fixed inset-0 z-[60] overflow-y-auto">
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true" onclick="toggleFolderModal()">
+                <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"></div>
+            </div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full border border-slate-200">
+                <form action="/create-folder?dir={{ selected_dir }}" method="post">
+                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                        <div class="sm:flex sm:items-start">
+                            <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-50 sm:mx-0 sm:h-10 sm:w-10">
+                                <i class="fas fa-folder-plus text-blue-600"></i>
+                            </div>
+                            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                                <h3 class="text-lg leading-6 font-bold text-slate-900" id="modal-title">Create New Folder</h3>
+                                <div class="mt-4">
+                                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Folder Name</label>
+                                    <input type="text" name="folder_name" required autofocus
+                                        placeholder="e.g. documents"
+                                        class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none text-sm">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-slate-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3">
+                        <button type="submit" class="w-full inline-flex justify-center rounded-xl border border-transparent shadow-sm px-4 py-2.5 bg-blue-600 text-base font-bold text-white hover:bg-blue-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm transition-all active:scale-95">
+                            Create Folder
+                        </button>
+                        <button type="button" onclick="toggleFolderModal()" class="mt-3 w-full inline-flex justify-center rounded-xl border border-slate-200 shadow-sm px-4 py-2.5 bg-white text-base font-medium text-slate-700 hover:bg-slate-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-all">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Modal -->
+    <div id="rename-modal" class="hidden fixed inset-0 z-[60] overflow-y-auto">
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true" onclick="closeRenameModal()">
+                <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"></div>
+            </div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full border border-slate-200">
+                <form action="/rename?dir={{ selected_dir }}" method="post">
+                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                        <div class="sm:flex sm:items-start">
+                            <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-50 sm:mx-0 sm:h-10 sm:w-10">
+                                <i class="fas fa-edit text-blue-600"></i>
+                            </div>
+                            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                                <h3 class="text-lg leading-6 font-bold text-slate-900">Rename Item</h3>
+                                <div class="mt-4">
+                                    <input type="hidden" name="old_name" id="rename-old-name">
+                                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">New Name</label>
+                                    <input type="text" name="new_name" id="rename-new-name" required autofocus
+                                        class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none text-sm">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-slate-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3">
+                        <button type="submit" class="w-full inline-flex justify-center rounded-xl border border-transparent shadow-sm px-4 py-2.5 bg-blue-600 text-base font-bold text-white hover:bg-blue-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm transition-all active:scale-95">
+                            Rename
+                        </button>
+                        <button type="button" onclick="closeRenameModal()" class="mt-3 w-full inline-flex justify-center rounded-xl border border-slate-200 shadow-sm px-4 py-2.5 bg-white text-base font-medium text-slate-700 hover:bg-slate-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-all">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Modal -->
+    <div id="delete-modal" class="hidden fixed inset-0 z-[60] overflow-y-auto">
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true" onclick="closeDeleteModal()">
+                <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"></div>
+            </div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full border border-slate-200">
+                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <div class="sm:flex sm:items-start">
+                        <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-50 sm:mx-0 sm:h-10 sm:w-10">
+                            <i class="fas fa-trash-alt text-red-600"></i>
+                        </div>
+                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                            <h3 class="text-lg leading-6 font-bold text-slate-900">Delete <span id="delete-type">Item</span></h3>
+                            <div class="mt-2">
+                                <p class="text-sm text-slate-500 leading-relaxed">
+                                    Are you sure you want to delete <span id="delete-item-name" class="font-bold text-slate-900"></span>? 
+                                    This action cannot be undone.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-slate-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3">
+                    <button id="delete-confirm-btn" onclick="executeSingleDelete()" class="w-full inline-flex justify-center rounded-xl border border-transparent shadow-sm px-4 py-2.5 bg-red-600 text-base font-bold text-white hover:bg-red-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm transition-all active:scale-95">
+                        Delete
+                    </button>
+                    <button type="button" onclick="closeDeleteModal()" class="mt-3 w-full inline-flex justify-center rounded-xl border border-slate-200 shadow-sm px-4 py-2.5 bg-white text-base font-medium text-slate-700 hover:bg-slate-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-all">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Delete Modal -->
+    <div id="bulk-delete-modal" class="hidden fixed inset-0 z-[60] overflow-y-auto">
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true" onclick="closeBulkDeleteModal()">
+                <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"></div>
+            </div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full border border-slate-200">
+                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <div class="sm:flex sm:items-start">
+                        <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-50 sm:mx-0 sm:h-10 sm:w-10">
+                            <i class="fas fa-trash-alt text-red-600"></i>
+                        </div>
+                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                            <h3 class="text-lg leading-6 font-bold text-slate-900">Delete Multiple Items</h3>
+                            <div class="mt-2">
+                                <p class="text-sm text-slate-500 leading-relaxed">
+                                    Are you sure you want to delete <span id="bulk-delete-count" class="font-bold text-slate-900"></span> selected items? 
+                                    This action cannot be undone.
+                                </p>
+                                <div id="bulk-delete-list" class="mt-3 max-h-32 overflow-y-auto bg-slate-50 rounded-lg p-2 text-xs text-slate-600 border border-slate-100">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-slate-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3">
+                    <button onclick="executeBulkDelete()" class="w-full inline-flex justify-center rounded-xl border border-transparent shadow-sm px-4 py-2.5 bg-red-600 text-base font-bold text-white hover:bg-red-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm transition-all active:scale-95">
+                        Yes, Delete All
+                    </button>
+                    <button type="button" onclick="closeBulkDeleteModal()" class="mt-3 w-full inline-flex justify-center rounded-xl border border-slate-200 shadow-sm px-4 py-2.5 bg-white text-base font-medium text-slate-700 hover:bg-slate-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-all">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Extract Bundles Modal -->
+    <div id="release-modal" class="hidden fixed inset-0 z-[60] overflow-y-auto">
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true" onclick="closeReleaseModal()">
+                <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"></div>
+            </div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full border border-slate-200">
+                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <div class="sm:flex sm:items-start">
+                        <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-indigo-50 sm:mx-0 sm:h-10 sm:w-10">
+                            <i class="fas fa-rocket text-indigo-600"></i>
+                        </div>
+                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                            <h3 class="text-lg leading-6 font-bold text-slate-900">Extract Bundles</h3>
+                            <div class="mt-3">
+                                <p class="text-sm text-slate-500">
+                                    Extracting <span id="release-filename" class="font-bold text-slate-900"></span> to <code class="bg-slate-100 px-1 rounded">/www/release</code>.
+                                </p>
+                                
+                                <div id="release-duplicates-container" class="hidden mt-4">
+                                    <div class="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg">
+                                        <div class="flex">
+                                            <div class="flex-shrink-0">
+                                                <i class="fas fa-exclamation-triangle text-amber-500"></i>
+                                            </div>
+                                            <div class="ml-3">
+                                                <p class="text-sm text-amber-700 font-bold">Duplicate Files Detected!</p>
+                                                <p class="text-xs text-amber-600 mt-1">The following files already exist in the release folder and will be overwritten:</p>
+                                                <ul id="release-duplicates-list" class="mt-2 text-xs text-amber-700 list-disc list-inside max-h-32 overflow-y-auto"></ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-4 flex items-center gap-2">
+                                        <input type="checkbox" id="release-overwrite" class="file-checkbox w-4 h-4 rounded-full border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                                        <label for="release-overwrite" class="text-sm font-semibold text-slate-700">Confirm Overwrite</label>
+                                    </div>
+                                </div>
+                                
+                                <div id="release-loading" class="hidden mt-6 text-center">
+                                    <i class="fas fa-circle-notch fa-spin text-2xl text-indigo-600"></i>
+                                    <p class="text-xs font-bold text-slate-400 mt-2 uppercase tracking-widest">Checking contents...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-slate-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3">
+                    <button id="release-confirm-btn" onclick="executeRelease()" class="w-full inline-flex justify-center rounded-xl border border-transparent shadow-sm px-4 py-2.5 bg-indigo-600 text-base font-bold text-white hover:bg-indigo-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                        Extract Bundle
+                    </button>
+                    <button type="button" onclick="closeReleaseModal()" class="mt-3 w-full inline-flex justify-center rounded-xl border border-slate-200 shadow-sm px-4 py-2.5 bg-white text-base font-medium text-slate-700 hover:bg-slate-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-all">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Progress Modal -->
+    <div id="progress-modal" class="hidden fixed inset-0 z-[70] overflow-y-auto">
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true">
+                <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
+            </div>
+            <div class="inline-block align-bottom bg-white rounded-3xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full border border-slate-200">
+                <div class="bg-white p-8">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-xl font-bold text-slate-900 flex items-center gap-3">
+                            <i class="fas fa-cloud-arrow-up text-blue-600"></i>
+                            <span id="progress-title">Uploading Files...</span>
+                        </h3>
+                        <span id="progress-percent" class="text-sm font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full">0%</span>
+                    </div>
+                    
+                    <div class="w-full bg-slate-100 rounded-full h-3 mb-4 overflow-hidden">
+                        <div id="progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+                    </div>
+                    
+                    <div class="flex justify-between items-center text-xs font-bold uppercase tracking-widest text-slate-400">
+                        <span id="progress-status">Preparing...</span>
+                        <span id="progress-info">0 / 0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-blue-600' : 'bg-red-600';
+            const icon = type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
+            
+            toast.className = `pointer-events-auto flex items-center p-4 rounded-xl shadow-2xl text-white ${bgColor} transform transition-all duration-300 translate-y-[-20px] opacity-0 mb-3`;
+            toast.innerHTML = `
+                <i class="fas ${icon} mr-3 text-lg"></i>
+                <div class="flex-1 text-sm font-semibold">${message}</div>
+                <button onclick="this.parentElement.remove()" class="ml-4 text-white/70 hover:text-white"><i class="fas fa-times"></i></button>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Animation in
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-[-20px]', 'opacity-0');
+            });
+            
+            // Auto remove
+            setTimeout(() => {
+                toast.classList.add('translate-y-[-20px]', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 5000);
+        }
+
+        function toggleSelectAll(checkbox) {
+            const checkboxes = document.querySelectorAll('.file-checkbox');
+            checkboxes.forEach(cb => cb.checked = checkbox.checked);
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            const checkboxes = document.querySelectorAll('.file-checkbox:checked');
+            const count = checkboxes.length;
+            const bulkActions = document.getElementById('bulk-actions');
+            const selectedCountDisplay = document.getElementById('selected-count');
+            
+            selectedCountDisplay.textContent = count;
+            
+            if (count > 0) {
+                bulkActions.classList.remove('hidden');
+                
+                // Show/hide bulk extract if in staging and .tar.gz files are selected
+                const bulkExtractBtn = document.getElementById('bulk-extract-btn');
+                const bulkExtractDivider = document.getElementById('bulk-extract-divider');
+                if (bulkExtractBtn) {
+                    const tarGzSelected = Array.from(checkboxes).some(cb => cb.getAttribute('data-filename').endsWith('.tar.gz'));
+                    if (tarGzSelected) {
+                        bulkExtractBtn.classList.remove('hidden');
+                        bulkExtractDivider.classList.remove('hidden');
+                    } else {
+                        bulkExtractBtn.classList.add('hidden');
+                        bulkExtractDivider.classList.add('hidden');
+                    }
+                }
+            } else {
+                bulkActions.classList.add('hidden');
+                document.getElementById('select-all').checked = false;
+            }
+        }
+
+        async function downloadSelectedZip() {
+            const checkboxes = document.querySelectorAll('.file-checkbox:checked');
+            const files = Array.from(checkboxes).map(cb => cb.getAttribute('data-filename'));
+            
+            if (files.length === 0) return;
+            
+            // Show progress or loading state if needed
+            const bulkActions = document.getElementById('bulk-actions');
+            const originalHTML = bulkActions.innerHTML;
+            bulkActions.innerHTML = '<span class="text-xs font-bold text-blue-600 uppercase animate-pulse">Compressing...</span>';
+            
+            try {
+                const response = await fetch('/download-zip', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filenames: files,
+                        dir: '{{ selected_dir }}'
+                    })
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `download_${new Date().getTime()}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                } else {
+                    alert('Compression failed');
+                }
+            } catch (err) {
+                alert('An error occurred');
+            } finally {
+                bulkActions.innerHTML = originalHTML;
+                updateSelectedCount(); // Refresh state
+            }
+        }
+
+        function openBulkDeleteModal() {
+            const checkboxes = document.querySelectorAll('.file-checkbox:checked');
+            const files = Array.from(checkboxes).map(cb => cb.getAttribute('data-filename'));
+            
+            if (files.length === 0) return;
+            
+            document.getElementById('bulk-delete-count').textContent = files.length;
+            const listContainer = document.getElementById('bulk-delete-list');
+            listContainer.innerHTML = '<ul class="list-disc list-inside">' + 
+                files.map(f => `<li class="truncate">${f}</li>`).join('') + 
+                '</ul>';
+            
+            document.getElementById('bulk-delete-modal').classList.remove('hidden');
+        }
+
+        function closeBulkDeleteModal() {
+            document.getElementById('bulk-delete-modal').classList.add('hidden');
+        }
+
+        async function executeBulkDelete() {
+            const checkboxes = document.querySelectorAll('.file-checkbox:checked');
+            const files = Array.from(checkboxes).map(cb => cb.getAttribute('data-filename'));
+            
+            if (files.length === 0) return;
+            
+            try {
+                const response = await fetch('/delete-bulk', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filenames: files,
+                        dir: '{{ selected_dir }}'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showToast(data.message);
+                    closeBulkDeleteModal();
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    showToast(data.error || 'Bulk deletion failed', 'error');
+                }
+            } catch (err) {
+                showToast('An error occurred during bulk deletion', 'error');
+            }
+        }
+
+        function toggleSidebarFolder(event, path) {
+            event.preventDefault();
+            const btn = event.currentTarget;
+            const icon = btn.querySelector('i');
+            const isCollapsed = icon.style.transform === 'rotate(-90deg)';
+            
+            // Toggle icon rotation
+            icon.style.transform = isCollapsed ? 'rotate(0deg)' : 'rotate(-90deg)';
+            
+            // Find immediate sub-folders (only one level deep)
+            const allRows = Array.from(document.querySelectorAll('.folder-row'));
+            const parentLevel = parseInt(allRows.find(r => r.getAttribute('data-path') === path).getAttribute('data-level'));
+            
+            allRows.forEach(row => {
+                const rowPath = row.getAttribute('data-path');
+                const rowLevel = parseInt(row.getAttribute('data-level'));
+                
+                if (rowPath !== path) {
+                    let isDirectChild = false;
+                    if (path === '.') {
+                        isDirectChild = (rowLevel === 1);
+                    } else {
+                        isDirectChild = (rowPath.startsWith(path + '/') && rowPath.split('/').length === path.split('/').length + 1);
+                    }
+                    
+                    if (isDirectChild) {
+                        if (isCollapsed) {
+                            row.classList.remove('hidden');
+                        } else {
+                            // If collapsing parent, recursively collapse all children
+                            collapseAllChildren(rowPath);
+                            row.classList.add('hidden');
+                        }
+                    }
+                }
+            });
+        }
+
+        function collapseAllChildren(path) {
+            const allRows = Array.from(document.querySelectorAll('.folder-row'));
+            allRows.forEach(row => {
+                const rowPath = row.getAttribute('data-path');
+                let shouldHide = false;
+                if (path === '.') {
+                    shouldHide = (rowPath !== '.');
+                } else {
+                    shouldHide = (rowPath !== path && (rowPath === path || rowPath.startsWith(path + '/')));
+                }
+                
+                if (shouldHide) {
+                    row.classList.add('hidden');
+                    const btn = document.querySelector(`.toggle-icon-btn[data-path="${rowPath}"]`);
+                    if (btn) {
+                        btn.querySelector('i').style.transform = 'rotate(-90deg)';
+                    }
+                }
+            });
+        }
+
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const fileDisplay = document.getElementById('file-display');
+        const fileName = document.getElementById('file-name');
+        const folderModal = document.getElementById('folder-modal');
+        const renameModal = document.getElementById('rename-modal');
+        const deleteModal = document.getElementById('delete-modal');
+
+        function toggleFolderModal() {
+            folderModal.classList.toggle('hidden');
+            if (!folderModal.classList.contains('hidden')) {
+                folderModal.querySelector('input').focus();
+            }
+        }
+
+        function openRenameModal(name) {
+            document.getElementById('rename-old-name').value = name;
+            document.getElementById('rename-new-name').value = name;
+            renameModal.classList.remove('hidden');
+            document.getElementById('rename-new-name').focus();
+        }
+
+        function closeRenameModal() {
+            renameModal.classList.add('hidden');
+        }
+
+        let currentDeleteName = '';
+
+        function openDeleteModal(name, isDir) {
+            currentDeleteName = name;
+            document.getElementById('delete-item-name').textContent = name;
+            document.getElementById('delete-type').textContent = isDir ? 'Folder' : 'File';
+            deleteModal.classList.remove('hidden');
+        }
+
+        async function executeSingleDelete() {
+            const btn = document.getElementById('delete-confirm-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-circle-notch fa-spin mr-2"></i> Deleting...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(`/delete/${encodeURIComponent(currentDeleteName)}?dir={{ selected_dir }}`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    showToast('Item deleted successfully');
+                    closeDeleteModal();
+                    setTimeout(() => window.location.reload(), 500);
+                } else {
+                    const data = await response.json().catch(() => ({}));
+                    showToast(data.error || 'Deletion failed', 'error');
+                }
+            } catch (err) {
+                showToast('An error occurred', 'error');
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        function closeDeleteModal() {
+            deleteModal.classList.add('hidden');
+        }
+
+        const uploadForm = document.getElementById('upload-form');
+        const progressModal = document.getElementById('progress-modal');
+        const progressBar = document.getElementById('progress-bar');
+        const progressPercent = document.getElementById('progress-percent');
+        const progressInfo = document.getElementById('progress-info');
+        const progressStatus = document.getElementById('progress-status');
+
+        function updateFileName(input) {
+            const uploadBtn = document.getElementById('upload-btn');
+            if (input.files.length > 0) {
+                if (input.files.length === 1) {
+                    fileName.textContent = input.files[0].name;
+                } else {
+                    fileName.textContent = `${input.files.length} files selected`;
+                }
+                fileDisplay.classList.remove('hidden');
+                fileDisplay.classList.add('flex');
+                uploadBtn.disabled = false;
+            } else {
+                fileDisplay.classList.add('hidden');
+                fileDisplay.classList.remove('flex');
+                uploadBtn.disabled = true;
+            }
+        }
+
+        async function handleUpload() {
+            const files = fileInput.files;
+            const dir = document.querySelector('input[name="dir"]').value;
+            const uploadBtn = document.getElementById('upload-btn');
+            
+            if (files.length === 0) {
+                showToast('Please select at least one file to upload', 'error');
+                return;
+            }
+
+            uploadBtn.disabled = true;
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) {
+                formData.append('file', files[i]);
+            }
+            formData.append('dir', dir);
+
+            // Show progress modal
+            progressModal.classList.remove('hidden');
+            progressInfo.textContent = `0 / ${files.length}`;
+            progressStatus.textContent = 'Uploading...';
+            
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload', true);
+
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percent = Math.round((event.loaded / event.total) * 100);
+                    progressBar.style.width = percent + '%';
+                    progressPercent.textContent = percent + '%';
+                    
+                    if (percent === 100) {
+                        progressStatus.textContent = 'Processing on server...';
+                    }
+                }
+            };
+
+            xhr.onload = () => {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    if (xhr.status === 200) {
+                        window.location.reload();
+                    } else {
+                        progressModal.classList.add('hidden');
+                        showToast(response.error || 'Upload failed', 'error');
+                        uploadBtn.disabled = false;
+                    }
+                } catch (e) {
+                    progressModal.classList.add('hidden');
+                    showToast('Server error during upload processing', 'error');
+                    uploadBtn.disabled = false;
+                }
+            };
+
+            xhr.onerror = () => {
+                progressModal.classList.add('hidden');
+                showToast('An error occurred during the upload.', 'error');
+                uploadBtn.disabled = false;
+            };
+
+            xhr.send(formData);
+        }
+
+        if (dropZone) {
+            dropZone.onclick = () => fileInput.click();
+
+            dropZone.ondragover = (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-blue-400', 'bg-blue-50/30');
+            };
+
+            dropZone.ondragleave = () => {
+                dropZone.classList.remove('border-blue-400', 'bg-blue-50/30');
+            };
+
+            dropZone.ondrop = (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-blue-400', 'bg-blue-50/30');
+                if (e.dataTransfer.files.length > 0) {
+                    fileInput.files = e.dataTransfer.files;
+                    updateFileName(fileInput);
+                }
+            };
+        }
+
+        // Auto-remove flash messages
+        setTimeout(() => {
+            const toasts = document.querySelectorAll('#toast-container > div');
+            toasts.forEach(t => {
+                t.style.opacity = '0';
+                t.style.transform = 'translateY(-20px)';
+                setTimeout(() => t.remove(), 300);
+            });
+        }, 5000);
+        // Extraction functionality
+        let currentReleasePaths = [];
+        
+        function openReleaseModal(paths) {
+            if (typeof paths === 'string') paths = [paths];
+            currentReleasePaths = paths;
+            
+            const filenameDisplay = document.getElementById('release-filename');
+            if (paths.length === 1) {
+                filenameDisplay.innerText = paths[0].split('/').pop();
+            } else {
+                filenameDisplay.innerText = `${paths.length} bundles`;
+            }
+
+            document.getElementById('release-modal').classList.remove('hidden');
+            document.getElementById('release-duplicates-container').classList.add('hidden');
+            document.getElementById('release-loading').classList.remove('hidden');
+            document.getElementById('release-confirm-btn').disabled = true;
+            document.getElementById('release-overwrite').checked = false;
+            
+            // Check for duplicates
+            fetch('/release', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths: currentReleasePaths, check_only: true })
+            })
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('release-loading').classList.add('hidden');
+                if (data.duplicates && data.duplicates.length > 0) {
+                    document.getElementById('release-duplicates-container').classList.remove('hidden');
+                    const list = document.getElementById('release-duplicates-list');
+                    list.innerHTML = data.duplicates.map(f => `<li>${f}</li>`).join('');
+                    document.getElementById('release-confirm-btn').disabled = true;
+                } else {
+                    document.getElementById('release-confirm-btn').disabled = false;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showToast('Error checking file contents', 'error');
+                closeReleaseModal();
+            });
+        }
+        
+        function openBulkExtractModal() {
+            const checkboxes = document.querySelectorAll('.file-checkbox:checked');
+            const files = Array.from(checkboxes)
+                .map(cb => cb.getAttribute('data-filename'))
+                .filter(name => name.endsWith('.tar.gz'));
+            
+            if (files.length === 0) return;
+            
+            // Map to paths relative to base_dir
+            const paths = files.map(f => {
+                const dir = '{{ selected_dir }}';
+                return dir === '.' ? f : dir + '/' + f;
+            });
+            openReleaseModal(paths);
+        }
+        
+        // Enable/disable confirm button based on overwrite checkbox
+        document.getElementById('release-overwrite').addEventListener('change', function() {
+            document.getElementById('release-confirm-btn').disabled = !this.checked;
+        });
+        
+        function closeReleaseModal() {
+            document.getElementById('release-modal').classList.add('hidden');
+        }
+        
+        async function executeRelease() {
+            const btn = document.getElementById('release-confirm-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-circle-notch fa-spin mr-2"></i> Extracting...';
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch('/release', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ paths: currentReleasePaths })
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showToast(data.message);
+                    closeReleaseModal();
+                    window.location.reload(); // Refresh
+                } else {
+                    showToast(data.error || 'Extraction failed', 'error');
+                }
+            } catch (err) {
+                showToast('Connection error', 'error');
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
